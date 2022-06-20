@@ -1,0 +1,660 @@
+---
+title: "asv_tax_analysis"
+author: "PaulaSabate"
+date: '2022-06-20'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r}
+
+library(ggplot2)
+library(plyr)
+library(dplyr)
+library(tidyr)
+library(tidyverse)
+library(readxl)
+
+
+tax<-readRDS("data/tax_Ebre_silva138.rds")
+tax_mat <- as.matrix(tax)
+
+asv<-readRDS("data/asv_tableEbre_norarificada.rds")
+
+metadata <- read_excel("output/metadata.xlsx")
+view(metadata)
+dim(tax)
+dim(asv)
+asv_t<-t(asv) #transposar i que noms de samples quedin com a columnes
+dim(asv_t)
+colnames(asv_t)
+metadata$Sample #veure contingut de metadata a $Sample
+all(colnames(asv_t)==metadata$Sample) #veure si noms de les columnes de asv_t i noms de les mostres de la metadata coincideixen
+metadata$Sample<-gsub("_DNA","-DNA", metadata$Sample) #canviar part del nom de les mostres pq coincideixi
+class(metadata)
+
+metadata1<-column_to_rownames(metadata, "Sample") #posar noms de samples com a rownames
+metadata1$Sample<-rownames(metadata1) #afegir columna amb noms samples
+all(rownames(metadata1)==colnames(asv_t)) #mirar si els rownames de la metadata1 coincideixen amb els colnames de asv_t
+#install.packages("vegan")
+#install.packages("spaa")
+#install.packages("EcolUtils")
+#install.packages("devtools")
+library(EcolUtils)
+library(vegan)
+library(spaa)
+library(devtools)
+#devtools::install_github("GuillemSalazar/EcolUtils")
+library(EcolUtils)
+#i remove chloroplasts
+tax[is.na(tax)] <- "unknown" #anomenar "unknown" a tots els espais de la taula tax que siguin NA
+tax1<- subset(tax, !(tax$Order=="Chloroplast"))
+tax<-tax1
+#saveRDS(tax, "output/tax_ebre_no_chloroplast.rds")
+tax<-readRDS("output/tax_ebre_no_chloroplast.rds")
+asv_ss <- rrarefy.perm(asv) #to generate a randomly rarefied community data frame
+rowSums(asv_ss) #tots haurien de tenir un num semblant
+asv_ss1<-asv_ss[rowSums(asv_ss)>0,] #quedar-se amb els que tinguin mes d'1 read (crec??)
+dim(asv_ss)
+dim(asv_ss1)
+
+
+asv_ss<-asv_ss[,colnames(asv_ss)%in%rownames(tax)]
+dim(asv_ss)
+asv_t<-asv_t[rownames(asv_t)%in%rownames(tax),]
+asv_rel_ab<-sweep(asv_t, 2, colSums(asv_t), FUN="/")*100 #fer abundancia relativa
+colSums(asv_rel_ab)
+
+#anar escollint amb quins grups ens volem quedar per fer els plots
+#en alguns casos quedar-no en un nivell gran ja va be, pero per exemple en proteobacteris va be separar mes
+tax.curated<-tax[,2] #en aquest cas la columna 2 son els phylum
+levels(as.factor(tax.curated))
+tax.curated[which(tax$Phylum %in% c("Actinobacteriota", "Chloroflexi", "Bdellovibrionota", "unknown",
+                                    "Bacteroidota", "Crenarchaeota"  ,  "Firmicutes",
+                                    "Proteobacteria","Planctomycetota","Verrucomicrobiota", "Desulfobacterota" ,
+                                    "Euryarchaeota", "Cyanobacteria")==F)]<-"Other" #dir que tot el que no sigui aixo dir-li other (grups que no ens interessen)
+tax.curated[tax.curated=="Proteobacteria"]<-tax[tax.curated=="Proteobacteria",3] #separar proteobacteria a nivell de classe
+tax.curated[tax.curated=="Alphaproteobacteria" & tax$Order %in% c("Rhodobacterales","Rhodospirillales", "Puniceispirillales", "Sphingomonadales","Rickettsiales","SAR11 clade")]<-tax[tax.curated=="Alphaproteobacteria" & tax$Order %in% c("Rhodobacterales","Rhodospirillales", "Puniceispirillales", "Sphingomonadales","Rickettsiales","SAR11 clade"),4] #separar els ordres d'alfaprot que interessen
+tax.curated[tax.curated=="Alphaproteobacteria"]<-"Other Alphaproteobacteria" #la resta d'alfaprot anomenar Other Alphaprot
+
+tax.curated[tax.curated=="Bacteroidota"  & tax$Order %in% c("Sphingobacteriales","Flavobacteriales", "Cytophagales")]<-tax[tax.curated=="Bacteroidota" & tax$Order %in% c("Sphingobacteriales","Flavobacteriales", "Cytophagales"),4]
+tax.curated[tax.curated=="Bacteroidota"]<-"Other Bacteroidota"
+
+tax.curated[tax.curated=="Gammaproteobacteria" & tax$Order %in% c("Alteromonadales", "Burkholderiales", "Vibrionales", "SAR86 clade", "Oceanospirillales", "Pseudomonadales")]<-tax[tax.curated=="Gammaproteobacteria" & tax$Order %in% c("Alteromonadales", "Burkholderiales", "Vibrionales", "SAR86 clade", "Oceanospirillales", "Pseudomonadales"),4]
+tax.curated[tax.curated=="Gammaproteobacteria"]<-"Other Gammaproteobacteria"
+
+
+tax.curated[tax.curated=="Cyanobacteria" & tax$Genus %in% c("Prochlorococcus MIT9313","Synechococcus CC9902")]<-tax[tax.curated=="Cyanobacteria" & tax$Genus %in% c("Prochlorococcus MIT9313","Synechococcus CC9902"),6]
+tax.curated[tax.curated=="Cyanobacteria"]<-"Other Cyanobacteria"
+
+
+levels(as.factor(tax.curated))
+tax.curated<-as.factor(tax.curated)
+tax$tax.curated<-tax.curated
+#canviar noms pq quedin un al costat dels altres els que interessin (per ordre alfabetic)
+tax$tax.curated<-gsub("Sphingobacteriales","bac_Sphingobacteriales", tax$tax.curated)
+tax$tax.curated<-gsub("Other Bacteroidota","bac_zother", tax$tax.curated)
+tax$tax.curated<-gsub("Cytophagales","bac_Cytophagales", tax$tax.curated)
+tax$tax.curated<-gsub("Flavobacteriales","bac_Flavobacteriales", tax$tax.curated)
+tax$tax.curated<-gsub("Crenarchaeota","arc_Crenarchaeota", tax$tax.curated)
+tax$tax.curated<-gsub("Euryarchaeota","arc_Euryarchaeota", tax$tax.curated)
+tax$tax.curated<-gsub("Nanoarchaeota","arc_Nanoarchaeota", tax$tax.curated)
+tax$tax.curated<-gsub("Other Alphaproteobacteria","pro_alf_zother alpha", tax$tax.curated)
+tax$tax.curated<-gsub("Rhodospirillales","pro_alf_Rhodospirillales", tax$tax.curated)
+tax$tax.curated<-gsub("Sphingomonadales","pro_alf_Sphingomonadales", tax$tax.curated)
+tax$tax.curated<-gsub("Rhizobiales","pro_alf_Rhizobiales", tax$tax.curated)
+tax$tax.curated<-gsub("SAR11 clade","pro_alf_SAR11_clade", tax$tax.curated)
+#tax$tax.curated<-gsub("Caulobacterales","pro_alf_Caulobacterales", tax$tax.curated)
+tax$tax.curated<-gsub("Rhodobacterales","pro_alf_Rhodobacterales", tax$tax.curated)
+tax$tax.curated<-gsub("Rickettsiales","pro_alf_Rickettsiales", tax$tax.curated)
+
+tax$tax.curated<-gsub("Pseudomonadales","pro_gam_Pseudomonadales", tax$tax.curated)
+tax$tax.curated<-gsub("Other Proteobacteria","pro_zother prot", tax$tax.curated)
+tax$tax.curated<-gsub("Alteromonadales","pro_gam_Alteromonadales", tax$tax.curated)
+tax$tax.curated<-gsub("Oceanospirillales","pro_gam_Oceanospirillales", tax$tax.curated)
+tax$tax.curated<-gsub("Vibrionales","pro_gam_Vibrionales", tax$tax.curated)
+tax$tax.curated<-gsub("Other Gammaproteobacteria","pro_gam_zother gamma", tax$tax.curated)
+tax$tax.curated<-gsub("Marinimicrobia (SAR406_clade)","Marinimicrobia", tax$tax.curated)
+tax$tax.curated<-gsub("Burkholderiales","pro_gam_Burkholderiales", tax$tax.curated)
+tax$tax.curated<-gsub("Deltaproteobacteria","pro_Deltaproteobacteria", tax$tax.curated)
+tax$tax.curated<-gsub("SAR86 clade","pro_gam_Sar86", tax$tax.curated)
+tax$tax.curated<-gsub("Synechococcus CC9902","cyan_synecho", tax$tax.curated)
+tax$tax.curated<-gsub("Prochlorococcus MIT9313","cyan_proch", tax$tax.curated)
+tax$tax.curated<-gsub("Other Cyanobacteria","cyan_zother", tax$tax.curated)
+tax$tax.curated<-gsub("Other","z_Other", tax$tax.curated)
+levels(as.factor(tax$tax.curated))
+levels(as.factor(tax.curated))
+levels(as.factor(tax$tax.curated))
+
+#per veure si son raros
+dim(asv_rel_ab)
+yys<- ifelse(asv_rel_ab>1,1,0) #mirar quins asv estan presents en almenys una mostra, si es aixi que els hi posi un 1 i sino un 0
+abundant<-asv_rel_ab[rowSums(yys)>0,]####OTUs that are abundant in at least 1 sample
+dim(abundant)
+#102 otus abundantes
+#le pego la taxonomia 
+tax_ab<-tax[match(rownames(abundant),rownames(tax)),] #quedar-me amb la tax dels asv abundants
+asv_rel_ab_abund_tax<-cbind(abundant, tax_ab) #unir la tax dels abundants amb la taula d'abundancia relativa dels abundants
+#write.table(asv_rel_ab_abund_tax, file="output/Ebre_abundant_taxa.txt", sep="\t")
+rare<-asv_rel_ab[!rownames(asv_rel_ab)%in%rownames(abundant),] #asv que no estan a abundants
+tax_rare<- tax[match(rownames(rare), rownames(tax)),] ##quedar-me amb la tax dels asv rars
+asv_rel_ab_rare_tax<-cbind(rare, tax_rare)
+#write.table(asv_rel_ab_rare_tax, file="output/Ebre_rare_taxa.txt", sep = "\t")
+dim(rare)
+dim(asv_ss)
+
+asv_rel_ab_t <- t(asv_rel_ab)
+
+#nmds
+all(metadata$Sample==rownames(asv_ss))
+dist<-vegdist(asv_ss)
+mds<-metaMDS(dist,iter=1000)
+sites<-data.frame(scores(mds, display="sites")) #Esto extrae los scores del NMDS
+plot1<-plot(mds) #nmds cutre de la R
+
+###FER UN NMDS AMB NOMES UNA FRACCIO, Com??? m'elimina columnes enlloc de rows?
+asv_ss2=as.data.frame(asv_ss)
+samples <- rownames(asv_ss2)
+rownames(asv_ss2) <- NULL
+asv_ss2 <- cbind(samples,asv_ss2)
+view(asv_ss2)
+asv_ss3<-asv_ss2[-c(1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35),]
+rownames(asv_ss3)<-NULL
+asv_ss3<-column_to_rownames(asv_ss3, "samples") #posar noms de samples com a rownames
+view(asv_ss3)
+metadata2<-metadata[-c(1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35),]
+view(metadata2)
+metadata2<-column_to_rownames(metadata2, "Sample") #posar noms de samples com a rownames
+
+
+all(metadata2$Sample==rownames(asv_ss3))
+dist2<-vegdist(asv_ss3)
+mds2<-metaMDS(dist2, weakties = F)
+sites2<-data.frame(scores(mds2, display="sites"))
+
+gg<- qplot(NMDS1,NMDS2, data=sites2, colour=metadata2$Sal,alpha=I(0.8)) + 
+  geom_point(size=4) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=20, na.value="transparent") + 
+  scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+
+  theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) +
+  labs(shape = "Fraction", colour = "Salinity") 
+gg
+#ggsave("output/nmds_0.2_sal_v2.pdf", dpi = 300, width = 7, height = 5)
+############
+
+gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$Sal,alpha=I(0.8)) +geom_point(aes(shape=as.factor(metadata$fraction)), size=3.5) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=20, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+ theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) +
+  labs(shape = "Fraction", colour = "Salinity") 
+gg
+#scale_size(range=c(0.1,4))
+#geom_polygon(data=sites, aes(x=NMDS1,y=NMDS2,fill=metadata$fraction,group=metadata$fraction),alpha=0.30)
+
+ggsave("output/nmds_Sal_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$`DOC (µM)`,alpha=I(0.8)) +geom_point(aes(size=specnumber(asv_rel_ab_t), shape=as.factor(metadata$fraction))) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=115, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+ theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) +
+  labs(shape = "Fraction", colour = "DOC (µM)", size = "Relative abundance")
+
+
+gg
+#ggsave("output/nmds_DOC_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$`NOxT Σ(NO3-)+(NO2-)(μM)`,alpha=I(0.8)) +geom_point(aes(size=specnumber(asv_rel_ab_t), shape=as.factor(metadata$fraction))) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=30, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+ theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) +
+  labs(shape = "Fraction", colour = "NOxT (µM)", size = "Relative abundance")
+
+gg
+#ggsave("output/nmds_NOxT_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$`NO3- (μM)`,alpha=I(0.8)) +geom_point(aes(size=specnumber(asv_rel_ab_t), shape=as.factor(metadata$fraction))) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=30, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+ theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) + 
+  labs(shape = "Fraction", colour = "NO3- (µM)", size = "Relative abundance")
+
+gg
+#ggsave("output/nmds_NO3_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$`NO2- (μM)`,alpha=I(0.8)) +geom_point(aes(size=specnumber(asv_rel_ab_t), shape=as.factor(metadata$fraction))) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=0.4, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+ theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) +
+  labs(shape = "Fraction", colour = "NO2- (µM)", size = "Relative abundance")
+
+
+gg
+#ggsave("output/nmds_NO2_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$`NH4+ (μM)`,alpha=I(0.8)) +geom_point(aes(size=specnumber(asv_rel_ab_t), shape=as.factor(metadata$fraction))) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=1.30, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+ theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) +
+  labs(shape = "Fraction", colour = "NH4+ (µM)", size = "Relative abundance")
+
+gg
+#ggsave("output/nmds_NH4_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$`SiO42- (μM)`,alpha=I(0.8)) +geom_point(aes(size=specnumber(asv_rel_ab_t), shape=as.factor(metadata$fraction))) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=10, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+ theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) +
+  labs(shape = "Fraction", colour = "SiO42- (µM)", size = "Relative abundance")
+
+
+gg
+#ggsave("output/nmds_SiO42_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$`PO43- (μM)`,alpha=I(0.8)) +geom_point(aes(size=specnumber(asv_rel_ab_t), shape=as.factor(metadata$fraction))) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=0.5, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+ theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) +
+  labs(shape = "Fraction", colour = "PO43- (µM)", size = "Relative abundance")
+
+gg
+#ggsave("output/nmds_PO43_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$`bix`,alpha=I(0.8)) +geom_point(aes(size=specnumber(asv_rel_ab_t), shape=as.factor(metadata$fraction))) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=0.9, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+ theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) +
+  labs(shape = "Fraction", colour = "bix", size = "Relative abundance")
+
+gg
+#ggsave("output/nmds_bix_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$`b`,alpha=I(0.8)) +geom_point(aes(size=specnumber(asv_rel_ab_t), shape=as.factor(metadata$fraction))) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=0.05, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+ theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) +
+  labs(shape = "Fraction", colour = "b", size = "Relative abundance")
+
+gg
+#ggsave("output/nmds_b_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$`t`,alpha=I(0.8)) +geom_point(aes(size=specnumber(asv_rel_ab_t), shape=as.factor(metadata$fraction))) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=0.05, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+ theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) +
+  labs(shape = "Fraction", colour = "t", size = "Relative abundance")
+
+gg
+#ggsave("output/nmds_t_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$`a`,alpha=I(0.8)) +geom_point(aes(size=specnumber(asv_rel_ab_t), shape=as.factor(metadata$fraction))) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=0.05, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+ theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) +
+  labs(shape = "Fraction", colour = "a", size = "Relative abundance")
+
+gg
+#ggsave("output/nmds_a_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$`m`,alpha=I(0.8)) +geom_point(aes(size=specnumber(asv_rel_ab_t), shape=as.factor(metadata$fraction))) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=0.1, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+ theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) +
+  labs(shape = "Fraction", colour = "m", size = "Relative abundance")
+
+gg
+#ggsave("output/nmds_m_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$`c`,alpha=I(0.8)) +geom_point(aes(size=specnumber(asv_rel_ab_t), shape=as.factor(metadata$fraction))) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=0.05, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+ theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) +
+  labs(shape = "Fraction", colour = "c", size = "Relative abundance")
+
+gg
+#ggsave("output/nmds_c_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$`fi`,alpha=I(0.8)) +geom_point(aes(size=specnumber(asv_rel_ab_t), shape=as.factor(metadata$fraction))) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=1.3, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+ theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) +
+  labs(shape = "Fraction", colour = "fi", size = "Relative abundance")
+
+gg
+#ggsave("output/nmds_fi_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$`hix`,alpha=I(0.8)) +geom_point(aes(size=specnumber(asv_rel_ab_t), shape=as.factor(metadata$fraction))) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=0.65, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
+  theme_bw() +
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),panel.grid.minor.x=element_blank())+ theme(panel.background=element_rect(colour = "black", size= 1)) +theme(axis.text.y=element_text(size=12,colour="black"),axis.text.x=element_text(size=12,colour="black"),axis.title.x =element_text(size=12,colour="black"),axis.title.y = element_text(size=12,colour="black"))+
+  theme(strip.background = element_blank(), strip.text = element_text(size=14)) +
+  labs(shape = "Fraction", colour = "hix", size = "Relative abundance")
+
+gg
+#ggsave("output/nmds_hix_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+SHANNON_Ebre_asv<-diversity(asv_rel_ab_t,index="shannon", MARGIN=1, base=exp(1))
+Simpson_Ebre_asv <-diversity(asv_rel_ab_t,"simpson")
+richness_Ebre_asv<-specnumber(asv_rel_ab_t)
+diversity_Ebre_asv<-cbind(metadata,richness_Ebre_asv, SHANNON_Ebre_asv, Simpson_Ebre_asv)
+all(rownames(asv_rel_ab_t)==metadata$Sample)
+#write.csv(diversity_Ebre_asv, "output/diversity_Ebre_asv.csv")
+view(diversity_Ebre_asv)
+
+shannon<-qplot(diversity_Ebre_asv$Sal, diversity_Ebre_asv$SHANNON_Ebre_asv) +
+  theme_bw() +
+  theme(aspect.ratio = 5/5) +
+  labs(x="Salinity", y="Shannon Index")
+
+Simpson<-qplot(diversity_Ebre_asv$Sal, diversity_Ebre_asv$Simpson_Ebre_asv) +
+  theme_bw() +
+  theme(aspect.ratio = 5/5) +
+  labs(x="Salinity", y="Simpson Index")
+
+richness<-qplot(diversity_Ebre_asv$Sal, diversity_Ebre_asv$richness_Ebre_asv) +
+  theme_bw() +
+  theme(aspect.ratio = 5/5) +
+  labs(x="Salinity", y="Richness") 
+
+grid.arrange(shannon, Simpson, richness, nrow=2)
+
+ggplot() +
+  geom_point(aes(diversity_Ebre_asv$Sal, diversity_Ebre_asv$Simpson_Ebre_asv)) +
+  facet_grid(~diversity_Ebre_asv$fraction)+
+  theme_bw()
+
+dim(asv_rel_ab)
+dim(tax)
+all(rownames(asv_rel_ab)==rownames(tax))
+asv_rel_ab_tax<-cbind(asv_rel_ab,tax$tax.curated)
+colnames(asv_rel_ab_tax)[37]<-"taxforplots"
+class(asv_rel_ab_tax)
+asv_rel_ab_tax<-as.data.frame(asv_rel_ab_tax)
+asv_rel_ab_tax1<-dplyr::add_rownames(asv_rel_ab_tax)
+
+library(tidyr)
+test<-gather(asv_rel_ab_tax1,key="sample",value="Rel_ab", -taxforplots,-rowname)
+test$Rel_ab<-as.numeric(test$Rel_ab)
+test_sum<-aggregate(test[c("Rel_ab")], by=test[c("sample","taxforplots")], FUN= sum)
+asv_rel_ab_long<-test_sum
+
+metadata_long<-metadata[match(asv_rel_ab_long$sample, metadata$Sample),]
+
+asv_rel_ab_long<-cbind(asv_rel_ab_long, metadata_long)
+
+levels(as.factor(asv_rel_ab_long$taxforplots))
+superpalette<-c("#E41A1C", #actino
+                "#FFDF26", #arc_crena
+                "#626591", #arc_eury
+                "#b2d8d8", #bac_cytophagales
+                "#66b2b2", #bac_flavobact
+                "#008080", #bac_sphingobact
+                "#006666", #bac_zother
+                "#b27300", #Bdellovirbionota
+                "#CCFF99", #Chloroflexi
+                "#4DAF4A", #cyan_proc
+                "#74ee15", #cyan_syn
+                "#028900", #cyan_zother
+                "#740001", #Desulfo
+                "#ff2032", #firmi
+                "#4F507F", #planctomy
+                "#984EA3", #pro_alf_rhodobacterales
+                "#ff00b4", #pro_alf_Rhodospirillales
+                "#d5d4d4", #pro_alf_rickett
+                "#69D2E7", #pro_alf_SAR11
+                "#a7dbd8", #pro_alf_Sphingomon
+                "#ea80fc", #pro_alf_zother
+                "#310e59", #pro_gam_alteromon
+                "#B15A7A", #pro_gam_burkholderiales
+                "#e6e8ea", #pro_gam_oceanospir
+                "#FF7F00", #pro_gam_pseudomon
+                "#dab600", #pro_gam_Sar86
+                "#ff80ed", #pro_gam_vibrio
+                "#F15E75", #pro_gam_zother
+                "#FFFF33", #Puniceispi
+                "#00fff9", #unknown
+                "#4169E1", #Verrucomicro
+                "#0000CD")#z_other
+                
+                
+
+Nosuperpalette<-c("#FF7F00", #actino
+                "#FFDF26", #arc_crena
+                "#626591", #arc_eury
+                "#8D4C6A", #bac_cytophagales
+                "#377EB8", #bac_flavobact
+                "#6f473a", #bac_sphingobact
+                "#419681", #bac_zother
+                "#b27300", #Bdellovirbionota
+                "#CCFF99", #Chloroflexi
+                "#4DAF4A", #cyan_proc
+                "#74ee15", #cyan_syn
+                "#5F9660", #cyan_zother
+                "#727E76", #Desulfo
+                "#85668C", #firmi
+                "#4F507F", #planctomy
+                "#984EA3", #pro_alf_rhodobacterales
+                "#B15A7A", #pro_alf_Rhodospirillales
+                "#d5d4d4", #pro_alf_rickett
+                "#69D2E7", #pro_alf_SAR11
+                "#a7dbd8", #pro_alf_Sphingomon
+                "#ea80fc", #pro_alf_zother
+                "#f38630", #pro_gam_alteromon
+                "#ff00b4", #pro_gam_burkholderiales
+                "#e6e8ea", #pro_gam_oceanospir
+                "#E41A1C", #pro_gam_pseudomon
+                "#ffef9e", #pro_gam_Sar86
+                "#ff80ed", #pro_gam_vibrio
+                "#F15E75", #pro_gam_zother
+                "#FFFF33", #Puniceispi
+                "#1E90FF", #unknown
+                "#4169E1", #Verrucomicro
+                "#0000CD")#z_other
+#"#98c3ff","#8A2BE2", "#6073b6","#00d2ff", "#353f6f", "#456D75", "#72ba0d", "#000080", "#E6E6FA" ,"#ffffff")
+superpalette1<-c("#003366",#acido
+                 "#B175F3",#actino
+                 "#20b2aa",#eury
+                 "#126CB7",#thauma
+                 "#E467E9", #bacteroidetes
+                 "#0f8a00",#clorof
+                 "#98FB98", #other cyan
+                 "#3CB371",#proc
+                 "#CCFF99",#syn
+                 "#16B0FE",#gemma
+                 "#dddddd",#lentis
+                 "#a7dbd8",#marini
+                 "#674DE9",#nitros
+                 "#01656f",#nitros
+                 "#DDEFFF",#PAUC34f
+                 "#ffb3ba", #planct
+                 "#AD7B7C", #rhodo
+                 "#ff7373", #rhodo
+                 "#FFA500",#ricket
+                 "#FFD700", #sar11
+                 "#bf9b30",#otheralf
+                 "#9370DB", #beta
+                 "#8A2BE2",#delta
+                 "#1E90FF", #E01-
+                 "#6495ED",#oceanos
+                 "#4169E1",#oceanos_sar86
+                 "#0000CD",#other gamma
+                 "#353f6f",#pseudo
+                 "#456D75",#incertae
+                 "#d04e22",#othergamma
+                 "#9999CC",#pseudo
+                 "#E6E6FA", #pro other pro
+                 "#9370DB",#SBR,
+                 "#8B008B", #spiro
+                 "#4B0082",#verruco
+                 "#8C4C74", #verruco
+                 "#C71585",#woese
+                 "#000000") #z_other
+
+library(forcats)
+
+test1<-fct_reorder(as.factor(asv_rel_ab_long$sample),asv_rel_ab_long$Sal)
+asv_rel_ab_long$sample<-factor(asv_rel_ab_long$sample, levels=levels(test1))
+
+sample_new<-gsub("-DNA3","",asv_rel_ab_long$sample)
+sample_new1<-gsub("-DNA0.2","",sample_new)
+asv_rel_ab_long$station<-sample_new1
+test1<-fct_reorder(as.factor(asv_rel_ab_long$station),asv_rel_ab_long$Sal)
+asv_rel_ab_long$station<-factor(asv_rel_ab_long$station, levels=levels(test1))
+
+bar <- ggplot(as.data.frame(asv_rel_ab_long), aes(x=station, y=Rel_ab, fill = taxforplots), colour=NULL) +  
+  scale_fill_manual(values=superpalette, name="Taxonomy Ebre") + 
+  geom_bar(position="fill", stat="identity", width=1) +
+  facet_wrap(~fraction, drop= TRUE)+
+  theme_bw() + 
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),
+        panel.grid.minor.x=element_blank(),axis.ticks=element_line(size=0.2),aspect.ratio=2/(1+sqrt(1)),
+        text=element_text(size=12),axis.text.y=element_text(size=7),axis.title.y=element_text(margin=margin(0,15,0,0)),
+        axis.title.x=element_text(margin=margin(15,0,0,0)),axis.text.x=element_text(size=7),
+        plot.title=element_text(size=12, face='bold', family="Times", margin=margin(0,0,20,0)))+   
+  theme(panel.background=element_rect(colour = "black", size= 1)) +
+  theme(axis.text.x=element_text(colour="black",angle=45, vjust=0.2))+
+  theme(axis.text.y=element_text(colour="black"))+
+  labs(x="Station", y="Relative abundance") 
+
+bar
+ggsave("output/barplot_Ebre.pdf", dpi = 300, width = 20, height = 10)
+
+
+all(metadata$Sample==colnames(abundant))
+
+plot(metadata$Sal, colSums(abundant))
+plot(metadata$Sal, colSums(rare))
+
+
+
+#####SHIFTING ASVs
+
+
+####Calculate, for each ASV, the Euclidean distance of its relative abundance between pairs of sites, and its maximum change in relative abundance:
+otus<-asv_ss
+otuss.loc=matrix(0,3,ncol(otus))
+colnames(otuss.loc)=colnames(otus)
+for(i in 1:ncol(otus)){
+  (colnames(otus)[i])
+  m=1
+  j=1
+  print(paste("i:",i))
+  dist=1
+  t=j+1
+  
+  
+  m=m+1
+  
+  dist=dist(otus[,i], method = "euclidean")
+  max=max(otus[,i])
+  min=min(otus[,i])
+  mean=mean(otus[,i])
+  otuss.loc[1,i]=mean
+  otuss.loc[2,i]=mean(dist)
+  otuss.loc[3,i]=max-min
+  
+}
+
+rownames(otuss.loc)<-c("Mean_Abund","Distance","Range")
+otloc<-as.data.frame(t(otuss.loc))
+
+
+##Check the distribution of the distance or range values among the ASVs, to decide which threshold to choose:
+hist(log10(otloc$Range),breaks=1000)
+hist(log10(otloc$Distance),breaks=1000)
+
+
+
+### We identified the OTUs showing the largest changes in relative abundance at the network scale (termed ‘shifting’ OTUs) as those presenting a mean distance > 10.
+shif<-otus[,otloc$Distance>10] 
+
+
+### Determine the average (or range in) maximum change in relative abundance shown by any shifting OTU between two sites:
+shifx<-otloc[otloc$Distance>10,]
+mean(shifx$Range)
+range(shifx$Range)
+
+###i make categories to study the shifting asvs
+zona<-NULL
+for(i in 1:dim(metadata)[1]){
+  if(metadata[i, 6]>35)
+    zona[i] <- "ocean"
+  else if (metadata[i, 6]<10)
+    zona[i] <- "river"
+  else zona[i] <- "intermediate"
+}
+metadata$zona <- zona
+#########In our case, we were interested in those OTUs that showed the largest changes in relative abundance from the sea to the river environment, so we identify this particular behaviour as follows:
+shif<-as.data.frame(shif)
+class <- NULL
+for (i in 1:length(names(shif))){
+  if (mean(subset(shif[,i],subset=metadata$zona == "ocean")) >mean(subset(shif[,i],subset=metadata$zona == "river")))
+    class[i]<-"ocean" #these are the shifting OTUs that are more abundant in sea than in river
+  else if (mean(subset(shif[,i],subset=metadata$zona == "river")) >mean(subset(shif[,i],subset=metadata$zona=="ocean")))
+    class[i]<-"river" #these are the shifting OTUs that are more abundant in river than in sea
+  else class[i]<-"Other"}	#these are the rest of the shifting OTUs that do not fulfill any of the previous conditions
+
+
+
+shifgroup<-data.frame(cbind(names(shif),class))
+rownames(shifgroup)<-as.character(shifgroup$V1)
+shifgroup$V1<-NULL
+shif_category <- shif
+colnames(shif_category) <-shifgroup$class
+
+#Separate these two groups of OTUs with different behaviors:
+Ocean <-shif[,colnames(shif_category)=="ocean"]
+River <-shif[,colnames(shif_category)=="river"]
+
+dim(Ocean) #hay 239 asvs  shifters que aumentan mucho su abundancia al sea
+dim(River) #hay 214 asvs al river
+
+#write.table(Sea, file="Sea.txt", sep="\t", dec=".", col.names=TRUE, row.names = TRUE) 
+#write.table(River, file="River.txt", sep="\t", dec=".", col.names=TRUE, row.names = TRUE) 
+all(rownames(Ocean)==metadata$Sample)
+all(rownames(asv_ss)==metadata$Sample)
+plot(metadata$Sal,(rowSums(Ocean)/rowSums(asv_ss))*100)
+plot(metadata$Sal,(rowSums(River)/rowSums(asv_ss))*100)
+
+ocean<-qplot(metadata$Sal,(rowSums(Ocean)/rowSums(asv_ss))*100) +
+  theme_bw() +
+  labs(x="Salinity", y="Relative abundance Ocean", title="Ocean") +
+  geom_smooth(level=0, color ="red")
+#ggsave("output/ocean_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+river<-qplot(metadata$Sal,(rowSums(River)/rowSums(asv_ss))*100) +
+  theme_bw() +
+  labs(x="Salinity", y="Relative abundance River", title="River") +
+  geom_smooth(level=0, color="blue")
+#ggsave("output/river_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+ocean_river <- qplot()+
+  geom_point(aes(metadata$Sal, (rowSums(Ocean)/rowSums(asv_ss))*100, shape = "Ocean")) +
+  geom_point(aes(metadata$Sal, (rowSums(River)/rowSums(asv_ss))*100, shape = "River")) +
+  geom_smooth(aes(x=metadata$Sal, y=(rowSums(River)/rowSums(asv_ss))*100, color = "River"), level=0, se = FALSE) +
+  geom_smooth(aes(x=metadata$Sal, y=(rowSums(Ocean)/rowSums(asv_ss))*100, color = "Ocean"), level=0, se = FALSE) +
+  labs(colour="Color", shape = "Shape") + scale_color_manual(values = c("#00c2c7", "#f27d0c")) +
+  theme_bw() +#ff2032
+  theme(panel.grid.major.y=element_blank(),panel.grid.minor.y=element_blank(),panel.grid.major.x=element_blank(),
+        panel.grid.minor.x=element_blank(),axis.ticks=element_line(size=0.2),
+        text=element_text(size=12),axis.text.y=element_text(size=7),axis.title.y=element_text(margin=margin(0,15,0,0)),
+        axis.title.x=element_text(margin=margin(15,0,0,0)),axis.text.x=element_text(size=7),
+        plot.title=element_text(size=12, face='bold', family="Times", margin=margin(0,0,20,0)))+   
+  theme(panel.background=element_rect(colour = "black", size= 1)) +
+  theme(axis.text.x=element_text(colour="black", vjust=0.2))+
+  theme(axis.text.y=element_text(colour="black")) +
+  labs(x="Salinity", y="Relative Abundance") 
+ocean_river
+
+#ggsave("output/ocean_river_Ebre.pdf", dpi=300, width=7, height=5)
+
+
