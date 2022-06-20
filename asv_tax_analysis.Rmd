@@ -39,7 +39,7 @@ dim(asv_t)
 colnames(asv_t)
 metadata$Sample #veure contingut de metadata a $Sample
 all(colnames(asv_t)==metadata$Sample) #veure si noms de les columnes de asv_t i noms de les mostres de la metadata coincideixen
-metadata$Sample<-gsub("_DNA","-DNA", metadata$Sample) #canviar part del nom de les mostres pq coincideixi
+metadata$Sample<-gsub("_DNA","-DNA", metadata$Sample) #canviar part del nom de les mostres perque coincideixi
 class(metadata)
 
 metadata1<-column_to_rownames(metadata, "Sample") #posar noms de samples com a rownames
@@ -63,7 +63,7 @@ tax<-tax1
 tax<-readRDS("output/tax_ebre_no_chloroplast.rds")
 asv_ss <- rrarefy.perm(asv) #to generate a randomly rarefied community data frame
 rowSums(asv_ss) #tots haurien de tenir un num semblant
-asv_ss1<-asv_ss[rowSums(asv_ss)>0,] #quedar-se amb els que tinguin mes d'1 read (crec??)
+asv_ss1<-asv_ss[rowSums(asv_ss)>0,] #quedar-se amb els que tinguin mes d'1 read
 dim(asv_ss)
 dim(asv_ss1)
 
@@ -175,7 +175,7 @@ metadata2<-metadata[-c(1,3,5,7,9,11,13,15,17,19,21,23,25,27,29,31,33,35),]
 view(metadata2)
 metadata2<-column_to_rownames(metadata2, "Sample") #posar noms de samples com a rownames
 
-
+##Fer NMDS amb només fracció 0.2
 all(metadata2$Sample==rownames(asv_ss3))
 dist2<-vegdist(asv_ss3)
 mds2<-metaMDS(dist2, weakties = F)
@@ -203,6 +203,8 @@ gg
 #geom_polygon(data=sites, aes(x=NMDS1,y=NMDS2,fill=metadata$fraction,group=metadata$fraction),alpha=0.30)
 
 ggsave("output/nmds_Sal_Ebre.pdf", dpi = 300, width = 7, height = 5)
+
+###nmds amb altres parametres ambientals
 
 gg<-qplot(NMDS1,NMDS2, data=sites, colour=metadata$`DOC (µM)`,alpha=I(0.8)) +geom_point(aes(size=specnumber(asv_rel_ab_t), shape=as.factor(metadata$fraction))) +theme_bw() + scale_colour_gradient2(low="red", mid="yellow", high="blue", midpoint=115, na.value="transparent") + scale_shape_manual(values = c(16, 15)) +scale_size(range=c(1,4)) +
   theme_bw() +
@@ -425,80 +427,6 @@ superpalette<-c("#E41A1C", #actino
                 "#4169E1", #Verrucomicro
                 "#0000CD")#z_other
                 
-                
-
-Nosuperpalette<-c("#FF7F00", #actino
-                "#FFDF26", #arc_crena
-                "#626591", #arc_eury
-                "#8D4C6A", #bac_cytophagales
-                "#377EB8", #bac_flavobact
-                "#6f473a", #bac_sphingobact
-                "#419681", #bac_zother
-                "#b27300", #Bdellovirbionota
-                "#CCFF99", #Chloroflexi
-                "#4DAF4A", #cyan_proc
-                "#74ee15", #cyan_syn
-                "#5F9660", #cyan_zother
-                "#727E76", #Desulfo
-                "#85668C", #firmi
-                "#4F507F", #planctomy
-                "#984EA3", #pro_alf_rhodobacterales
-                "#B15A7A", #pro_alf_Rhodospirillales
-                "#d5d4d4", #pro_alf_rickett
-                "#69D2E7", #pro_alf_SAR11
-                "#a7dbd8", #pro_alf_Sphingomon
-                "#ea80fc", #pro_alf_zother
-                "#f38630", #pro_gam_alteromon
-                "#ff00b4", #pro_gam_burkholderiales
-                "#e6e8ea", #pro_gam_oceanospir
-                "#E41A1C", #pro_gam_pseudomon
-                "#ffef9e", #pro_gam_Sar86
-                "#ff80ed", #pro_gam_vibrio
-                "#F15E75", #pro_gam_zother
-                "#FFFF33", #Puniceispi
-                "#1E90FF", #unknown
-                "#4169E1", #Verrucomicro
-                "#0000CD")#z_other
-#"#98c3ff","#8A2BE2", "#6073b6","#00d2ff", "#353f6f", "#456D75", "#72ba0d", "#000080", "#E6E6FA" ,"#ffffff")
-superpalette1<-c("#003366",#acido
-                 "#B175F3",#actino
-                 "#20b2aa",#eury
-                 "#126CB7",#thauma
-                 "#E467E9", #bacteroidetes
-                 "#0f8a00",#clorof
-                 "#98FB98", #other cyan
-                 "#3CB371",#proc
-                 "#CCFF99",#syn
-                 "#16B0FE",#gemma
-                 "#dddddd",#lentis
-                 "#a7dbd8",#marini
-                 "#674DE9",#nitros
-                 "#01656f",#nitros
-                 "#DDEFFF",#PAUC34f
-                 "#ffb3ba", #planct
-                 "#AD7B7C", #rhodo
-                 "#ff7373", #rhodo
-                 "#FFA500",#ricket
-                 "#FFD700", #sar11
-                 "#bf9b30",#otheralf
-                 "#9370DB", #beta
-                 "#8A2BE2",#delta
-                 "#1E90FF", #E01-
-                 "#6495ED",#oceanos
-                 "#4169E1",#oceanos_sar86
-                 "#0000CD",#other gamma
-                 "#353f6f",#pseudo
-                 "#456D75",#incertae
-                 "#d04e22",#othergamma
-                 "#9999CC",#pseudo
-                 "#E6E6FA", #pro other pro
-                 "#9370DB",#SBR,
-                 "#8B008B", #spiro
-                 "#4B0082",#verruco
-                 "#8C4C74", #verruco
-                 "#C71585",#woese
-                 "#000000") #z_other
-
 library(forcats)
 
 test1<-fct_reorder(as.factor(asv_rel_ab_long$sample),asv_rel_ab_long$Sal)
